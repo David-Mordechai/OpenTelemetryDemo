@@ -3,6 +3,8 @@ using OpenTelemetry;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
+using System.Reflection.PortableExecutable;
+using OpenTelemetry.Logs;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -33,8 +35,9 @@ builder.Services.AddOpenTelemetry()
     .WithMetrics(b =>
     {
         // add prometheus exporter
-        b.AddPrometheusExporter();
-        
+        //b.AddPrometheusExporter();
+        b.AddOtlpExporter(options => options.Endpoint = new Uri("http://localhost:4317"));
+
         // receive metrics from our own custom sources
         b.AddMeter(serviceName);
 
@@ -44,8 +47,22 @@ builder.Services.AddOpenTelemetry()
         // receive metrics from built-in sources
         b.AddHttpClientInstrumentation();
         b.AddAspNetCoreInstrumentation();
-    });
+    })
+    .StartWithHost();
 
+// Clear default logging providers used by WebApplication host.
+builder.Logging.ClearProviders();
+// Configure OpenTelemetry Logging.
+builder.Logging.AddOpenTelemetry(options =>
+{
+    options.SetResourceBuilder(resource);
+    options.AddOtlpExporter(otlpOptions =>
+    {
+        // Use IConfiguration directly for Otlp exporter endpoint option.
+        otlpOptions.Endpoint = new Uri("http://localhost:4317");
+    });
+    options.IncludeFormattedMessage = true;
+}).SetMinimumLevel(LogLevel.Information);
 
 var app = builder.Build();
 
@@ -56,8 +73,9 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.MapGet("/weatherforecast", async ([FromServices]IHttpClientFactory httpClient) =>
+app.MapGet("/weatherforecast", async ([FromServices]IHttpClientFactory httpClient, [FromServices]ILogger<Program> logger) =>
 {
+    logger.LogInformation("Sending request to WebApi2...");
     using var client = httpClient.CreateClient();
     var forecast = await client.GetFromJsonAsync<WeatherForecast[]?>("http://localhost:5156/weatherforecast");
     return forecast;
