@@ -7,64 +7,47 @@ using OpenTelemetry.Trace;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// Define some important constants to initialize tracing with
 const string serviceName = "OpenTelemetryDemo.WebApi2";
 const string serviceVersion = "1.0.0";
 var resource = ResourceBuilder.CreateDefault().AddService(serviceName: serviceName, serviceVersion: serviceVersion);
 
-// Configure important OpenTelemetry settings, the console exporter, and instrumentation library
 builder.Services.AddOpenTelemetry()
     .WithTracing(tracerProviderBuilder =>
     {
         tracerProviderBuilder
-            .AddJaegerExporter()
-            .AddConsoleExporter()
             .AddOtlpExporter(options => options.Endpoint = new Uri("http://localhost:4317"))
             .AddSource(serviceName)
             .SetResourceBuilder(resource)
             .AddHttpClientInstrumentation()
             .AddAspNetCoreInstrumentation();
     })
-    .WithMetrics(b =>
+    .WithMetrics(meterProviderBuilder =>
     {
-        // add prometheus exporter
-        //b.AddPrometheusExporter();
-        b.AddOtlpExporter(options => options.Endpoint = new Uri("http://localhost:4317"));
-
-        // receive metrics from our own custom sources
-        b.AddMeter(serviceName);
-
-        // decorate our service name so we can find it when we look inside Prometheus
-        b.SetResourceBuilder(resource);
-
-        // receive metrics from built-in sources
-        b.AddHttpClientInstrumentation();
-        b.AddAspNetCoreInstrumentation();
+        meterProviderBuilder
+            .AddOtlpExporter(options => options.Endpoint = new Uri("http://localhost:4317"))
+            .AddMeter(serviceName)
+            .SetResourceBuilder(resource)
+            .AddHttpClientInstrumentation()
+            .AddAspNetCoreInstrumentation();
     })
     .StartWithHost();
 
-// Clear default logging providers used by WebApplication host.
 builder.Logging.ClearProviders();
-// Configure OpenTelemetry Logging.
-builder.Logging.AddOpenTelemetry(options =>
+builder.Logging.AddOpenTelemetry(telemetryLoggerOptions =>
 {
-    options.SetResourceBuilder(resource);
-    options.AddOtlpExporter(otlpOptions =>
+    telemetryLoggerOptions.SetResourceBuilder(resource);
+    telemetryLoggerOptions.AddOtlpExporter(otlpExporterOptions =>
     {
-        // Use IConfiguration directly for Otlp exporter endpoint option.
-        otlpOptions.Endpoint = new Uri("http://localhost:4317");
+        otlpExporterOptions.Endpoint = new Uri("http://localhost:4317");
     });
-    options.IncludeFormattedMessage = true;
+    telemetryLoggerOptions.IncludeFormattedMessage = true;
 }).SetMinimumLevel(LogLevel.Information);
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -76,7 +59,7 @@ var summaries = new[]
     "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
 };
 
-app.MapGet("/weatherforecast", ([FromServices]ILogger<Program> logger) =>
+app.MapGet("/weatherforecast2", ([FromServices] ILogger<Program> logger) =>
 {
     var forecast = Enumerable.Range(1, 5).Select(index =>
         new WeatherForecast
@@ -89,7 +72,7 @@ app.MapGet("/weatherforecast", ([FromServices]ILogger<Program> logger) =>
     logger.LogInformation("Sending response to WebApi");
     return forecast;
 })
-.WithName("GetWeatherForecast");
+.WithName("GetWeatherForecast2");
 
 app.Run();
 
